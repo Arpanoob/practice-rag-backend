@@ -43,7 +43,21 @@ export const config = {
     url: str("QDRANT_URL", "http://127.0.0.1:6333"),
     apiKey: optionalStr("QDRANT_API_KEY"),
     collectionName: str("QDRANT_COLLECTION", "youtube_transcripts"),
-    vectorSize: int("EMBED_DIM", 768),
+    vectorSize: int("EMBED_DIM", 1024),
+  },
+
+  // LLM Provider: "bedrock" or "ollama"
+  llmProvider: str("LLM_PROVIDER", "bedrock"),
+
+  // AWS Bedrock configuration
+  bedrock: {
+    region: str("AWS_REGION", "us-east-1"),
+    chatModel: str("BEDROCK_CHAT_MODEL", "meta.llama3-2-3b-instruct-v1:0"),
+    embedModel: str("BEDROCK_EMBED_MODEL", "amazon.titan-embed-text-v2:0"),
+    embedDimension: int("BEDROCK_EMBED_DIM", 1024),
+    accessKeyId: optionalStr("AWS_ACCESS_KEY_ID"),
+    secretAccessKey: optionalStr("AWS_SECRET_ACCESS_KEY"),
+    sessionToken: optionalStr("AWS_SESSION_TOKEN"),
   },
 
   // Ollama / OpenAI-compatible LLM endpoint
