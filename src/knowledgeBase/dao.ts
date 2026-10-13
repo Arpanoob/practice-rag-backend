@@ -10,9 +10,6 @@ export interface ChunkPayloadItem {
   formattedTime?: string;
 }
 
-// Re-exported for backwards compatibility with existing imports.
-export { extractVideoId };
-
 /**
  * Builds a resilient Qdrant filter condition matching either videoUrl OR videoId.
  */
@@ -120,22 +117,6 @@ export async function saveChunksToQdrant(
     wait: true,
     points,
   });
-}
-
-export async function searchSimilarChunks(
-  videoUrl: string,
-  queryEmbedding: number[],
-  limit: number = 4
-) {
-  const filter = buildVideoFilter(videoUrl);
-  const results = await qdrant.query(COLLECTION_NAME, {
-    query: queryEmbedding,
-    limit,
-    with_payload: true,
-    filter,
-  });
-
-  return results.points;
 }
 
 /**

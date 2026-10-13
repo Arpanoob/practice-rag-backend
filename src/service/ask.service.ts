@@ -2,7 +2,6 @@ import { generateEmbedding } from "../data-retrieval/query-to-embedding/toEmbedd
 import { createPromptForQueryWithRetrievedContext } from "../data-retrieval/prompt/prompt";
 import { callLLM } from "../data-retrieval/llm-call/llm.call";
 import {
-  searchSimilarChunks,
   getFirstChunk,
   getAllChunksForVideo,
 } from "../knowledgeBase/dao";
@@ -15,29 +14,35 @@ import {
 import { LruCache } from "../utils/lruCache";
 import { logger } from "../utils/logger";
 import { config } from "../config";
+import { rewriteSearchQuery } from "../data-retrieval/query-rewriter/rewriteQuery";
+import { hybridSearchChunks } from "../data-retrieval/hybridSearch.ts/hybrid-search";
 
 const summaryCache = new LruCache<string>(
   config.summaryCache.maxEntries,
-  config.summaryCache.ttlMs
+  config.summaryCache.ttlMs,
 );
 
-
 export async function askQuestionService(
-  params: AskQuestionParams
+  params: AskQuestionParams,
 ): Promise<AskQuestionResult> {
-  const { videoUrl, query, limit = 4 } = params;
-
-  const embeddings = await generateEmbedding(query);
+const { videoUrl, query, history = [], limit = 4 } = params;
+const rewrittenQuery = await rewriteSearchQuery(query, history);  const embeddings = await generateEmbedding(rewrittenQuery);
   const queryEmbedding = embeddings[0];
 
   if (!queryEmbedding) {
     throw new Error("Failed to generate embedding for query.");
   }
 
-  const points = await searchSimilarChunks(videoUrl, queryEmbedding, limit);
-
+  const points = await hybridSearchChunks(
+    videoUrl,
+    queryEmbedding,
+    `${query} ${rewrittenQuery}`,
+    limit
+  );
   // If query is about video start or overview, include the introductory chunk
-  const isIntroQuery = /start|when|time|begin|intro|first|overview/i.test(query);
+  const isIntroQuery = /start|when|time|begin|intro|first|overview/i.test(
+    query,
+  );
   if (isIntroQuery) {
     const firstPoint = await getFirstChunk(videoUrl);
     if (firstPoint && !points.some((p) => p.id === firstPoint.id)) {
@@ -47,7 +52,7 @@ export async function askQuestionService(
 
   // Deduplicate and order chronologically for coherent LLM context
   const uniquePoints = Array.from(
-    new Map(points.map((p) => [String(p.id), p])).values()
+    new Map(points.map((p) => [String(p.id), p])).values(),
   ).sort((a, b) => {
     const startA = (a.payload as unknown as VideoChunkPayload)?.start ?? 0;
     const startB = (b.payload as unknown as VideoChunkPayload)?.start ?? 0;
@@ -69,8 +74,7 @@ export async function askQuestionService(
   }
 
   const prompt = createPromptForQueryWithRetrievedContext(query, contextChunks);
-  const answer = await callLLM(prompt);
-
+const answer = await callLLM(prompt, undefined, history);
   const relevantChunks: VideoTranscriptChunk[] = uniquePoints.map((point) => {
     const payload = point.payload as unknown as VideoChunkPayload;
     return {
@@ -89,7 +93,6 @@ export async function askQuestionService(
   };
 }
 
-
 const inFlightSummaries = new Map<string, Promise<string>>();
 
 /**
@@ -104,7 +107,7 @@ export function buildInstantSummary(points: Array<{ payload?: any }>): string {
   const firstPayload = points[0]?.payload as VideoChunkPayload | undefined;
   const rawFirst = (firstPayload?.rawText || firstPayload?.text || "").replace(
     /^\[\d+:\d+\]\s*/,
-    ""
+    "",
   );
   const overviewSnippet = rawFirst.slice(0, 250).trim();
 
@@ -122,7 +125,7 @@ export function buildInstantSummary(points: Array<{ payload?: any }>): string {
       const timeTag = payload.formattedTime || `${mins}:${secs}`;
       const raw = (payload.rawText || payload.text || "").replace(
         /^\[\d+:\d+\]\s*/,
-        ""
+        "",
       );
       const snippet = raw.slice(0, 100).trim();
       keyMoments.push(`* [${timeTag}] ${snippet}...`);
@@ -141,7 +144,7 @@ Click any timestamp above or ask a question in the chat to jump directly to any 
 
 export async function getVideoSummaryService(
   videoUrl: string,
-  forceRefresh: boolean = false
+  forceRefresh: boolean = false,
 ): Promise<string> {
   if (!forceRefresh && summaryCache.has(videoUrl)) {
     return summaryCache.get(videoUrl)!;
@@ -155,7 +158,7 @@ export async function getVideoSummaryService(
   const points = await getAllChunksForVideo(videoUrl);
   if (!points || points.length === 0) {
     throw new Error(
-      "No video transcript found in knowledge base. Please ingest the video first."
+      "No video transcript found in knowledge base. Please ingest the video first.",
     );
   }
 
@@ -205,7 +208,7 @@ Create a structured summary in clean markdown:
   const fastResult = await Promise.race([
     generatePromise,
     new Promise<string>((resolve) =>
-      setTimeout(() => resolve(instantSummary), 2500)
+      setTimeout(() => resolve(instantSummary), 2500),
     ),
   ]);
 

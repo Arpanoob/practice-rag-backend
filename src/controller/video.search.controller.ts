@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { ingestVideoService } from "../service/video.search.service";
-import { flushCollection } from "../knowledgeBase/db.vector";
 import { isValidYouTubeUrl } from "../utils/youtube";
 import { logger } from "../utils/logger";
 import { clientErrorMessage } from "../middleware/errorHandler";
@@ -76,28 +75,3 @@ export const streamIngestion = async (
   }
 };
 
-/**
- * Controller to flush / reset the Qdrant knowledge base vector collection.
- * Guarded by admin auth at the route layer.
- */
-export const flushDatabase = async (
-  _req: Request,
-  res: Response
-): Promise<void> => {
-  try {
-    await flushCollection();
-    logger.warn("Knowledge base vector collection flushed.");
-    res.json({
-      success: true,
-      message: "Knowledge base vector database flushed successfully.",
-    });
-  } catch (error: unknown) {
-    logger.error("Error flushing vector database", {
-      error: error instanceof Error ? error.message : String(error),
-    });
-    res.status(500).json({
-      success: false,
-      error: clientErrorMessage(error, "Failed to flush vector database."),
-    });
-  }
-};

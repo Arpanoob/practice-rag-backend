@@ -1,3 +1,4 @@
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { YoutubeTranscript } from "youtube-transcript";
 import { config } from "../../config";
 
@@ -30,50 +31,41 @@ export const extractTimedTranscriptChunks = async (
     throw new Error("No transcript items found for this video.");
   }
 
-  const chunks: TimedTranscriptChunk[] = [];
-  let currentGroup: string[] = [];
-  let currentStart = 0;
-  let currentDuration = 0;
-  let currentLength = 0;
 
-  for (let i = 0; i < transcriptItems.length; i++) {
-    const item = transcriptItems[i];
-    const itemStartSec = Math.floor(item.offset / 1000);
-
-    if (currentGroup.length === 0) {
-      currentStart = itemStartSec;
-    }
-
-    currentGroup.push(item.text);
-    currentLength += item.text.length + 1;
-    currentDuration =
-      itemStartSec + Math.floor(item.duration / 1000) - currentStart;
-
-    if (currentLength >= targetChunkChars || i === transcriptItems.length - 1) {
-      const rawText = currentGroup.join(" ");
-      const mins = Math.floor(currentStart / 60);
-      const secs = (currentStart % 60).toString().padStart(2, "0");
-      const formattedTime = `${mins}:${secs}`;
-
-      chunks.push({
-        start: currentStart,
-        formattedTime,
-        duration: Math.max(currentDuration, 15),
-        rawText,
-        text: `[${formattedTime}] ${rawText}`,
-      });
-
-      currentGroup = [];
-      currentLength = 0;
-
-      if (chunks.length > config.maxTranscriptChunks) {
-        throw new Error(
-          `Transcript exceeds the maximum supported length (${config.maxTranscriptChunks} chunks). This video is too long to ingest.`
-        );
-      }
-    }
+  const fullTaggedText = transcriptItems
+  .map((item) => {
+    const sec = Math.floor(item.offset / 1000);
+    const mins = Math.floor(sec / 60);
+    const secs = (sec % 60).toString().padStart(2, "0");
+    return `[${mins}:${secs}] ${item.text}`;
+  })
+  .join(" ");
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: targetChunkChars,
+    chunkOverlap: 150,
+  });
+  const splitTexts = await splitter.splitText(fullTaggedText);
+  
+  if (splitTexts.length > config.maxTranscriptChunks) {
+    throw new Error(
+      `Transcript exceeds the maximum supported length (${config.maxTranscriptChunks} chunks).`
+    );
   }
-
-  return chunks;
-};
+const chunks: TimedTranscriptChunk[] = splitTexts.map((chunkStr) => {
+    const match = new RegExp(/\[(\d+):(\d+)\]/).exec(chunkStr);
+    const mins = match ? Number.parseInt(match[1], 10) : 0;
+    const secs = match ? Number.parseInt(match[2], 10) : 0;
+    const start = mins * 60 + secs;
+    const formattedTime = `${mins}:${secs.toString().padStart(2, "0")}`;
+    // Clean text without all the [MM:SS] tags for the UI citation cards
+    const rawText = chunkStr.replace(/\[\d+:\d+\]\s*/g, "").trim();
+    return {
+      start,
+      formattedTime,
+      duration: 30,
+      rawText,
+      text: `[${formattedTime}] ${rawText}`,
+    };
+  });
+  return chunks;};
 

@@ -14,7 +14,6 @@ import {
   VideoChunkPayload,
 } from "../types/interface/video.search.interface";
 
-
 /**
  * Ingests a YouTube video into the Qdrant vector database with timestamped chunks.
  * Reports live progress via onProgress callback.
@@ -22,7 +21,7 @@ import {
 export async function ingestVideoService(
   videoUrl: string,
   onProgress?: (data: IngestionProgress) => void,
-  force: boolean = false
+  force: boolean = false,
 ): Promise<IngestVideoResult> {
   // Skip ingestion if the video has already been indexed
   if (!force) {
@@ -32,7 +31,9 @@ export async function ingestVideoService(
       const firstChunk = await getFirstChunk(videoUrl);
       const allChunks = await getAllChunksForVideo(videoUrl);
       const instantSummary = buildInstantSummary(allChunks);
-      const payload = firstChunk?.payload as unknown as VideoChunkPayload | undefined;
+      const payload = firstChunk?.payload as unknown as
+        | VideoChunkPayload
+        | undefined;
 
       onProgress?.({
         step: 4,
@@ -50,7 +51,10 @@ export async function ingestVideoService(
         sampleChunks: firstChunk
           ? [
               {
-                text: payload?.rawText || payload?.text || "Video introduction segment.",
+                text:
+                  payload?.rawText ||
+                  payload?.text ||
+                  "Video introduction segment.",
                 start: payload?.start ?? 0,
                 duration: payload?.duration ?? 30,
                 score: 1.0,
@@ -108,7 +112,7 @@ export async function ingestVideoService(
         formattedTime: c.formattedTime,
         chunkIndex: i,
       },
-    }))
+    })),
   );
 
   return {

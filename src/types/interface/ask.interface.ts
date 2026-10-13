@@ -19,3 +19,15 @@ export interface VideoSummaryResult {
   videoUrl: string;
   summary: string;
 }
+
+export interface ChatHistoryItem {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AskQuestionParams {
+  videoUrl: string;
+  query: string;
+  history?: ChatHistoryItem[];
+  limit?: number;
+}

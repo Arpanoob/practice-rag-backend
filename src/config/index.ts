@@ -20,7 +20,7 @@ function int(name: string, fallback: number): number {
   if (raw === undefined || raw === "") return fallback;
   const parsed = Number.parseInt(raw, 10);
   if (Number.isNaN(parsed)) {
-    throw new Error(`Invalid integer for env var ${name}: "${raw}"`);
+    throw new TypeError(`Invalid integer for env var ${name}: "${raw}"`);
   }
   return parsed;
 }
@@ -54,10 +54,6 @@ export const config = {
     chatModel: str("LLM_MODEL", "llama3.2"),
   },
 
-  // Admin token required to call destructive endpoints (e.g. flush).
-  // If unset, those endpoints are disabled entirely.
-  adminToken: optionalStr("ADMIN_TOKEN"),
-
   // Request body size limit
   bodyLimit: str("BODY_LIMIT", "256kb"),
 
@@ -89,12 +85,6 @@ export function validateConfig(): void {
     ) {
       throw new Error(
         "CORS_ORIGIN must be an explicit origin list in production (wildcard is not allowed)."
-      );
-    }
-    if (!config.adminToken) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[config] ADMIN_TOKEN is not set — destructive endpoints (flush) are DISABLED."
       );
     }
   }

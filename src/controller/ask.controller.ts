@@ -12,17 +12,22 @@ import { clientErrorMessage } from "../middleware/errorHandler";
  */
 export const askQuestionController = async (
   req: Request,
-  res: Response
+  res: Response,
 ): Promise<void> => {
   try {
     const videoUrl =
       (req.body?.videoUrl as string) || (req.query?.videoUrl as string);
     const query = (req.body?.query as string) || (req.query?.query as string);
 
-    if (!videoUrl || typeof videoUrl !== "string" || !isValidYouTubeUrl(videoUrl)) {
+    if (
+      !videoUrl ||
+      typeof videoUrl !== "string" ||
+      !isValidYouTubeUrl(videoUrl)
+    ) {
       res.status(400).json({
         success: false,
-        error: 'Missing or invalid "videoUrl" parameter. A valid YouTube URL is required.',
+        error:
+          'Missing or invalid "videoUrl" parameter. A valid YouTube URL is required.',
       });
       return;
     }
@@ -35,9 +40,8 @@ export const askQuestionController = async (
       return;
     }
 
-    // Execute complete RAG data retrieval pipeline
-    const result = await askQuestionService({ videoUrl, query });
-
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    const result = await askQuestionService({ videoUrl, query, history });
     res.status(200).json({
       success: true,
       message: "Answer generated successfully from knowledge base.",
@@ -49,7 +53,10 @@ export const askQuestionController = async (
     });
     res.status(500).json({
       success: false,
-      error: clientErrorMessage(error, "Failed to retrieve and generate answer."),
+      error: clientErrorMessage(
+        error,
+        "Failed to retrieve and generate answer.",
+      ),
     });
   }
 };
@@ -59,7 +66,7 @@ export const askQuestionController = async (
  */
 export const getVideoSummaryController = async (
   req: Request,
-  res: Response
+  res: Response,
 ): Promise<void> => {
   try {
     const videoUrl =
@@ -69,10 +76,15 @@ export const getVideoSummaryController = async (
       req.query?.refresh === "1" ||
       req.body?.refresh === true;
 
-    if (!videoUrl || typeof videoUrl !== "string" || !isValidYouTubeUrl(videoUrl)) {
+    if (
+      !videoUrl ||
+      typeof videoUrl !== "string" ||
+      !isValidYouTubeUrl(videoUrl)
+    ) {
       res.status(400).json({
         success: false,
-        error: 'Missing or invalid "videoUrl" parameter. A valid YouTube URL is required.',
+        error:
+          'Missing or invalid "videoUrl" parameter. A valid YouTube URL is required.',
       });
       return;
     }
