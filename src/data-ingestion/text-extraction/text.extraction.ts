@@ -18,17 +18,49 @@ export const extractTimedTranscriptChunks = async (
   videoUrl: string,
   targetChunkChars: number = 700
 ): Promise<TimedTranscriptChunk[]> => {
+  const browserFetch: typeof globalThis.fetch = async (input, init) => {
+    const headers = new Headers(init?.headers);
+    if (!headers.has("User-Agent")) {
+      headers.set(
+        "User-Agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+      );
+    }
+    if (!headers.has("Accept-Language")) {
+      headers.set("Accept-Language", "en-US,en;q=0.9");
+    }
+    return fetch(input, { ...init, headers });
+  };
+
   let transcriptItems;
   try {
     transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
       lang: "en",
+      fetch: browserFetch,
     });
-  } catch {
-    transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl);
+  } catch (err: unknown) {
+    try {
+      transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
+        fetch: browserFetch,
+      });
+    } catch {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes("Transcript is disabled") ||
+        msg.includes("No transcripts are available")
+      ) {
+        throw new Error(
+          "Captions or transcripts are disabled or restricted by YouTube for this video."
+        );
+      }
+      throw err;
+    }
   }
 
   if (!transcriptItems || transcriptItems.length === 0) {
-    throw new Error("No transcript items found for this video.");
+    throw new Error(
+      "Captions or transcripts are disabled or unavailable for this video."
+    );
   }
 
 
