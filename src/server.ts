@@ -1,3 +1,4 @@
+import type { Server } from "http";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -8,6 +9,7 @@ import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import videoSearchRouter from "./route/video.search.route";
 import askRouter from "./route/ask.route";
 import { initCollection, qdrant } from "./knowledgeBase/db.vector";
+import { fetchSecretFromSSM } from "./config/ssm";
 
 validateConfig();
 
@@ -50,30 +52,65 @@ app.use("/api/ask", askRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(config.port, () => {
-  logger.info(`Server is running on http://localhost:${config.port}`, {
-    env: config.nodeEnv,
-  });
-});
+let server: Server | null = null;
 
-// Initialize the vector collection after binding the port, but surface failures.
-initCollection()
-  .then(() => logger.info("Qdrant collection is ready."))
-  .catch((err) =>
-    logger.error("Failed to initialize Qdrant collection on startup", {
-      error: err instanceof Error ? err.message : String(err),
-    })
-  );
+async function start() {
+  if (!process.env.OPENAI_API_KEY && config.llmProvider === "openai") {
+    try {
+      logger.info("OPENAI_API_KEY not found in environment, checking AWS SSM Parameter Store...");
+      const ssmKey = await fetchSecretFromSSM(
+        "OPENAI_API_KEY",
+        process.env.AWS_REGION || "ap-southeast-2"
+      );
+      if (ssmKey) {
+        process.env.OPENAI_API_KEY = ssmKey;
+        logger.info("Successfully loaded OPENAI_API_KEY from AWS SSM Parameter Store.");
+      } else {
+        logger.warn("OPENAI_API_KEY was not found in AWS SSM Parameter Store.");
+      }
+    } catch (err) {
+      logger.warn("Could not retrieve OPENAI_API_KEY from AWS SSM", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  server = app.listen(config.port, () => {
+    logger.info(`Server is running on http://localhost:${config.port}`, {
+      env: config.nodeEnv,
+    });
+  });
+
+  // Initialize the vector collection after binding the port, but surface failures.
+  initCollection()
+    .then(() => logger.info("Qdrant collection is ready."))
+    .catch((err) =>
+      logger.error("Failed to initialize Qdrant collection on startup", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    );
+}
+
+start().catch((err) => {
+  logger.error("Fatal startup error", {
+    error: err instanceof Error ? err.message : String(err),
+  });
+  process.exit(1);
+});
 
 // Graceful shutdown so in-flight requests/SSE streams can drain.
 function shutdown(signal: string) {
   logger.info(`Received ${signal}, shutting down gracefully...`);
-  server.close(() => {
-    logger.info("HTTP server closed.");
+  if (server) {
+    server.close(() => {
+      logger.info("HTTP server closed.");
+      process.exit(0);
+    });
+    // Force-exit if connections don't close in time.
+    setTimeout(() => process.exit(1), 10_000).unref();
+  } else {
     process.exit(0);
-  });
-  // Force-exit if connections don't close in time.
-  setTimeout(() => process.exit(1), 10_000).unref();
+  }
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

@@ -42,12 +42,12 @@ export const config = {
   qdrant: {
     url: str("QDRANT_URL", "http://127.0.0.1:6333"),
     apiKey: optionalStr("QDRANT_API_KEY"),
-    collectionName: str("QDRANT_COLLECTION", "youtube_transcripts"),
-    vectorSize: int("EMBED_DIM", 1024),
+    collectionName: str("QDRANT_COLLECTION", "youtube_transcripts_openai"),
+    vectorSize: int("EMBED_DIM", 1536),
   },
 
-  // LLM Provider: "bedrock" or "ollama"
-  llmProvider: str("LLM_PROVIDER", "bedrock"),
+  // LLM Provider: "openai", "bedrock", or "ollama"
+  llmProvider: str("LLM_PROVIDER", "openai"),
 
   // AWS Bedrock configuration
   bedrock: {
@@ -60,12 +60,12 @@ export const config = {
     sessionToken: optionalStr("AWS_SESSION_TOKEN"),
   },
 
-  // Ollama / OpenAI-compatible LLM endpoint
+  // OpenAI / Ollama LLM endpoint
   llm: {
-    baseURL: str("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
-    apiKey: str("OLLAMA_API_KEY", "ollama"),
-    embedModel: str("EMBED_MODEL", "nomic-embed-text"),
-    chatModel: str("LLM_MODEL", "llama3.2"),
+    baseURL: str("OPENAI_BASE_URL", str("OLLAMA_BASE_URL", "https://api.openai.com/v1")),
+    apiKey: str("OPENAI_API_KEY", str("OLLAMA_API_KEY", "")),
+    embedModel: str("EMBED_MODEL", "text-embedding-3-small"),
+    chatModel: str("LLM_MODEL", "gpt-4o-mini"),
   },
 
   // Request body size limit
