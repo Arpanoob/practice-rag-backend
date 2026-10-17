@@ -84,6 +84,8 @@ export const config = {
   rateLimit: {
     windowMs: int("RATE_LIMIT_WINDOW_MS", 60_000),
     max: int("RATE_LIMIT_MAX", 60),
+    ingestMax: int("RATE_LIMIT_INGEST_MAX", 10), // 10/min for video ingestion
+    askMax: int("RATE_LIMIT_ASK_MAX", 20),       // 20/min for chat & summary
   },
 
   // Caching
