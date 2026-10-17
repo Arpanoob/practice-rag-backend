@@ -33,7 +33,10 @@ export const config = {
   port: int("PORT", 5000),
 
   // Comma-separated list of allowed CORS origins.
-  corsOrigins: str("CORS_ORIGIN", "http://localhost:5173")
+  corsOrigins: str(
+    "CORS_ORIGIN",
+    "http://localhost:5173,https://main.d3g240o8vholo9.amplifyapp.com,https://chatvid.arpangupta.co.in"
+  )
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean),
