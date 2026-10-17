@@ -51,5 +51,15 @@ export async function initCollection() {
     field_name: "text",
     field_schema: "text",
   });
+
+  await qdrant.createPayloadIndex(COLLECTION_NAME, {
+    field_name: "videoUrl",
+    field_schema: "keyword",
+  });
+
+  await qdrant.createPayloadIndex(COLLECTION_NAME, {
+    field_name: "videoId",
+    field_schema: "keyword",
+  });
 }
 
