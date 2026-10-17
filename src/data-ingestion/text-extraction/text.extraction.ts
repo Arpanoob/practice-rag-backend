@@ -99,5 +99,64 @@ const chunks: TimedTranscriptChunk[] = splitTexts.map((chunkStr) => {
       text: `[${formattedTime}] ${rawText}`,
     };
   });
-  return chunks;};
+  return chunks;
+};
+
+/**
+ * Parses user-provided custom transcript text into semantic TimedTranscriptChunks.
+ * Handles both timestamped text (e.g. "[01:30] text" or "01:30 text")
+ * and plain continuous text.
+ */
+export const parseCustomTranscriptToTimedChunks = async (
+  rawTranscript: string,
+  targetChunkChars: number = 700
+): Promise<TimedTranscriptChunk[]> => {
+  if (!rawTranscript || !rawTranscript.trim()) {
+    throw new Error("Transcript text cannot be empty.");
+  }
+
+  const splitter = new RecursiveCharacterTextSplitter({
+    chunkSize: targetChunkChars,
+    chunkOverlap: 150,
+  });
+
+  const splitTexts = await splitter.splitText(rawTranscript.trim());
+
+  if (splitTexts.length > config.maxTranscriptChunks) {
+    throw new Error(
+      `Transcript exceeds the maximum supported length (${config.maxTranscriptChunks} chunks).`
+    );
+  }
+
+  const chunks: TimedTranscriptChunk[] = splitTexts.map((chunkStr, index) => {
+    const match = /\[?(\d{1,2}):(\d{2})\]?/.exec(chunkStr);
+    let start: number;
+    let formattedTime: string;
+
+    if (match) {
+      const mins = Number.parseInt(match[1], 10);
+      const secs = Number.parseInt(match[2], 10);
+      start = mins * 60 + secs;
+      formattedTime = `${mins}:${secs.toString().padStart(2, "0")}`;
+    } else {
+      start = index * 30;
+      const mins = Math.floor(start / 60);
+      const secs = start % 60;
+      formattedTime = `${mins}:${secs.toString().padStart(2, "0")}`;
+    }
+
+    const rawText = chunkStr.replace(/\[?\d{1,2}:\d{2}\]?\s*/g, "").trim();
+
+    return {
+      start,
+      formattedTime,
+      duration: 30,
+      rawText: rawText || chunkStr,
+      text: `[${formattedTime}] ${rawText || chunkStr}`,
+    };
+  });
+
+  return chunks;
+};
+
 

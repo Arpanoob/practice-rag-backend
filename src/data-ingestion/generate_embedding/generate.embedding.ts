@@ -19,9 +19,16 @@ export async function extractYouTubeVideoEmbeddings(
     return results;
   }
 
-  const response = await openai.embeddings.create({
-    model: config.llm.embedModel,
-    input: chunks,
-  });
-  return response.data.map((item) => item.embedding);
+  // Process in safe batches of 100 chunks to prevent timeouts and token limit overflow
+  const results: number[][] = [];
+  const batchSize = 100;
+  for (let i = 0; i < chunks.length; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
+    const response = await openai.embeddings.create({
+      model: config.llm.embedModel,
+      input: batch,
+    });
+    results.push(...response.data.map((item) => item.embedding));
+  }
+  return results;
 }

@@ -27,6 +27,9 @@ export const streamIngestion = async (
     req.query.force === "1" ||
     req.body?.force === true;
 
+  const transcript =
+    (req.body?.transcript as string) || (req.query?.transcript as string);
+
   // Set SSE Headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -58,7 +61,8 @@ export const streamIngestion = async (
     const result = await ingestVideoService(
       videoUrl,
       (progress) => sendEvent(progress),
-      force
+      force,
+      transcript
     );
 
     sendEvent({ done: true, result });

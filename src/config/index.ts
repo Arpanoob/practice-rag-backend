@@ -77,8 +77,8 @@ export const config = {
     chatModel: str("LLM_MODEL", "gpt-4o-mini"),
   },
 
-  // Request body size limit
-  bodyLimit: str("BODY_LIMIT", "256kb"),
+  // Request body size limit (supports large full-length transcripts)
+  bodyLimit: str("BODY_LIMIT", "10mb"),
 
   // Rate limiting (fixed window, per IP)
   rateLimit: {
@@ -95,7 +95,7 @@ export const config = {
   },
 
   // Guardrails
-  maxTranscriptChunks: int("MAX_TRANSCRIPT_CHUNKS", 1000),
+  maxTranscriptChunks: int("MAX_TRANSCRIPT_CHUNKS", 2000),
 } as const;
 
 /**

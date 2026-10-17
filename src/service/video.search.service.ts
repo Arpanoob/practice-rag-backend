@@ -1,5 +1,8 @@
 import { extractYouTubeVideoEmbeddings } from "../data-ingestion/generate_embedding/generate.embedding";
-import { extractTimedTranscriptChunks } from "../data-ingestion/text-extraction/text.extraction";
+import {
+  extractTimedTranscriptChunks,
+  parseCustomTranscriptToTimedChunks,
+} from "../data-ingestion/text-extraction/text.extraction";
 import {
   saveChunksToQdrant,
   isVideoAlreadyIngested,
@@ -17,11 +20,13 @@ import {
 /**
  * Ingests a YouTube video into the Qdrant vector database with timestamped chunks.
  * Reports live progress via onProgress callback.
+ * Supports auto-scraping as well as custom user-provided transcripts.
  */
 export async function ingestVideoService(
   videoUrl: string,
   onProgress?: (data: IngestionProgress) => void,
   force: boolean = false,
+  customTranscript?: string
 ): Promise<IngestVideoResult> {
   // Skip ingestion if the video has already been indexed
   if (!force) {
@@ -65,19 +70,33 @@ export async function ingestVideoService(
     }
   }
 
-  // 1. Validate & fetch transcript
-  onProgress?.({
-    step: 0,
-    progress: 15,
-    message: "Validating YouTube URL & checking transcript availability...",
-  });
-
-  const timedChunks = await extractTimedTranscriptChunks(videoUrl, 700);
-  onProgress?.({
-    step: 1,
-    progress: 40,
-    message: "Transcript extracted successfully.",
-  });
+  // 1. Validate & fetch transcript (or parse custom provided transcript)
+  let timedChunks;
+  if (customTranscript && customTranscript.trim()) {
+    onProgress?.({
+      step: 0,
+      progress: 15,
+      message: "Parsing custom transcript...",
+    });
+    timedChunks = await parseCustomTranscriptToTimedChunks(customTranscript, 700);
+    onProgress?.({
+      step: 1,
+      progress: 40,
+      message: `Parsed custom transcript into ${timedChunks.length} segments.`,
+    });
+  } else {
+    onProgress?.({
+      step: 0,
+      progress: 15,
+      message: "Validating YouTube URL & checking transcript availability...",
+    });
+    timedChunks = await extractTimedTranscriptChunks(videoUrl, 700);
+    onProgress?.({
+      step: 1,
+      progress: 40,
+      message: "Transcript extracted successfully.",
+    });
+  }
 
   // 2. Prepare text chunks
   const chunkTexts = timedChunks.map((c) => c.text);
