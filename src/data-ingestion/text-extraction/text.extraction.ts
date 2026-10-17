@@ -1,6 +1,5 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { YoutubeTranscript } from "youtube-transcript";
-import { ProxyAgent } from "undici";
 import { config } from "../../config";
 
 export interface TimedTranscriptChunk {
@@ -9,65 +8,6 @@ export interface TimedTranscriptChunk {
   start: number;         // exact start time in seconds
   duration: number;      // segment duration in seconds
   formattedTime: string; // "MM:SS"
-}
-
-let cachedSessionCookies: string | null = null;
-let cookiesExpiresAt = 0;
-
-/**
- * Automatically initiates a YouTube visitor session by requesting youtube.com
- * and gathering real visitor cookies (VISITOR_INFO1_LIVE, __Secure-*, YSC, etc.)
- * Caches in memory for 1 hour to prevent redundant handshakes.
- */
-export async function getYoutubeSessionCookies(forceRefresh = false): Promise<string> {
-  const now = Date.now();
-  if (!forceRefresh && cachedSessionCookies && now < cookiesExpiresAt) {
-    return cachedSessionCookies;
-  }
-
-  const proxyUrl =
-    process.env.YOUTUBE_PROXY ||
-    process.env.HTTPS_PROXY ||
-    process.env.HTTP_PROXY;
-  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
-
-  try {
-    const res = await fetch("https://www.youtube.com", {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      },
-      ...(dispatcher ? { dispatcher } : {}),
-    });
-
-    const rawCookies: string[] =
-      typeof (res.headers as any).getSetCookie === "function"
-        ? (res.headers as any).getSetCookie()
-        : [res.headers.get("set-cookie") || ""];
-
-    const parsed = rawCookies
-      .map((c) => c.split(";")[0].trim())
-      .filter((c) => c.length > 0 && c.includes("="));
-
-    // Append any explicit custom cookie from environment if supplied
-    const envCookie = process.env.YOUTUBE_COOKIE;
-    if (envCookie) {
-      parsed.push(envCookie.trim());
-    }
-
-    cachedSessionCookies = parsed.join("; ");
-    cookiesExpiresAt = now + 3600 * 1000; // cache for 1 hour
-    return cachedSessionCookies;
-  } catch (err: unknown) {
-    console.warn(
-      "[WARN] Failed to auto-gather YouTube visitor session cookies:",
-      err instanceof Error ? err.message : String(err)
-    );
-    return process.env.YOUTUBE_COOKIE || "";
-  }
 }
 
 function decodeHtmlEntities(str: string): string {
@@ -149,60 +89,16 @@ export const extractTimedTranscriptChunks = async (
     }
   }
 
-  // 2. Fall back to direct YouTube scraping if RapidAPI is absent or returned no items
+  // 2. Fall back to direct YouTube scraper if RapidAPI is absent or returned no items
   if (!transcriptItems || transcriptItems.length === 0) {
-    const proxyUrl =
-      process.env.YOUTUBE_PROXY ||
-      process.env.HTTPS_PROXY ||
-      process.env.HTTP_PROXY;
-    const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
-
-    const createSessionFetch = async (forceRefreshCookies = false) => {
-      const sessionCookies = await getYoutubeSessionCookies(forceRefreshCookies);
-
-      const sessionFetch: typeof globalThis.fetch = async (input, init) => {
-        const headers = new Headers(init?.headers);
-        if (!headers.has("User-Agent")) {
-          headers.set(
-            "User-Agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-          );
-        }
-        if (!headers.has("Accept-Language")) {
-          headers.set("Accept-Language", "en-US,en;q=0.9");
-        }
-        if (sessionCookies && !headers.has("Cookie")) {
-          headers.set("Cookie", sessionCookies);
-        }
-        return fetch(input, {
-          ...init,
-          headers,
-          ...(dispatcher ? { dispatcher } : {}),
-        });
-      };
-      return sessionFetch;
-    };
-
-    let browserFetch = await createSessionFetch(false);
-
     try {
       transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
         lang: "en",
-        fetch: browserFetch,
-      });
-  } catch (firstErr: unknown) {
-    // Retry with any available language
-    try {
-      transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
-        fetch: browserFetch,
       });
     } catch {
-      // Force refresh session cookies and try one more time
+      // Retry with default or any available language
       try {
-        browserFetch = await createSessionFetch(true);
-        transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
-          fetch: browserFetch,
-        });
+        transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl);
       } catch (finalErr: unknown) {
         const msg =
           finalErr instanceof Error ? finalErr.message : String(finalErr);
@@ -217,7 +113,6 @@ export const extractTimedTranscriptChunks = async (
         throw finalErr;
       }
     }
-  }
   }
 
   if (!transcriptItems || transcriptItems.length === 0) {
