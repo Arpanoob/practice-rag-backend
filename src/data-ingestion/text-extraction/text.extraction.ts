@@ -70,6 +70,63 @@ export async function getYoutubeSessionCookies(forceRefresh = false): Promise<st
   }
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+/**
+ * Fetches transcript from RapidAPI (youtube-transcript3) when RAPIDAPI_KEY is configured.
+ * This completely bypasses datacenter IP blocking on cloud hosts like AWS EC2.
+ */
+async function fetchTranscriptViaRapidApi(
+  videoUrl: string
+): Promise<Array<{ text: string; duration: number; offset: number }> | null> {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) return null;
+
+  const host = process.env.RAPIDAPI_HOST || "youtube-transcript3.p.rapidapi.com";
+  const encodedUrl = encodeURIComponent(videoUrl);
+
+  const endpoints = [
+    `https://${host}/api/transcript-with-url?url=${encodedUrl}&lang=en`,
+    `https://${host}/api/transcript-with-url?url=${encodedUrl}`,
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint, {
+        headers: {
+          "x-rapidapi-host": host,
+          "x-rapidapi-key": apiKey,
+        },
+      });
+
+      if (!res.ok) continue;
+
+      const data: any = await res.json();
+      if (data && data.success && Array.isArray(data.transcript) && data.transcript.length > 0) {
+        return data.transcript.map((item: any) => ({
+          text: decodeHtmlEntities(String(item.text || "")),
+          duration: Math.round((parseFloat(item.duration) || 0) * 1000),
+          offset: Math.round((parseFloat(item.offset ?? item.start) || 0) * 1000),
+        }));
+      }
+    } catch (err: unknown) {
+      console.warn(
+        `[WARN] RapidAPI transcript fetch error (${endpoint}):`,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  return null;
+}
+
 /**
  * Extracts YouTube video transcript and groups them into coherent chunks
  * while preserving the EXACT start timestamp for every chunk.
@@ -78,46 +135,61 @@ export const extractTimedTranscriptChunks = async (
   videoUrl: string,
   targetChunkChars: number = 700
 ): Promise<TimedTranscriptChunk[]> => {
-  const proxyUrl =
-    process.env.YOUTUBE_PROXY ||
-    process.env.HTTPS_PROXY ||
-    process.env.HTTP_PROXY;
-  const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+  let transcriptItems: Array<{ text: string; duration: number; offset: number }> | undefined;
 
-  const createSessionFetch = async (forceRefreshCookies = false) => {
-    const sessionCookies = await getYoutubeSessionCookies(forceRefreshCookies);
+  // 1. Try RapidAPI first if key is present (bypasses cloud datacenter IP blocks)
+  if (process.env.RAPIDAPI_KEY) {
+    try {
+      const rapidItems = await fetchTranscriptViaRapidApi(videoUrl);
+      if (rapidItems && rapidItems.length > 0) {
+        transcriptItems = rapidItems;
+      }
+    } catch (rapidErr) {
+      console.warn("[WARN] RapidAPI extraction failed, falling back to direct fetch:", rapidErr);
+    }
+  }
 
-    const sessionFetch: typeof globalThis.fetch = async (input, init) => {
-      const headers = new Headers(init?.headers);
-      if (!headers.has("User-Agent")) {
-        headers.set(
-          "User-Agent",
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        );
-      }
-      if (!headers.has("Accept-Language")) {
-        headers.set("Accept-Language", "en-US,en;q=0.9");
-      }
-      if (sessionCookies && !headers.has("Cookie")) {
-        headers.set("Cookie", sessionCookies);
-      }
-      return fetch(input, {
-        ...init,
-        headers,
-        ...(dispatcher ? { dispatcher } : {}),
-      });
+  // 2. Fall back to direct YouTube scraping if RapidAPI is absent or returned no items
+  if (!transcriptItems || transcriptItems.length === 0) {
+    const proxyUrl =
+      process.env.YOUTUBE_PROXY ||
+      process.env.HTTPS_PROXY ||
+      process.env.HTTP_PROXY;
+    const dispatcher = proxyUrl ? new ProxyAgent(proxyUrl) : undefined;
+
+    const createSessionFetch = async (forceRefreshCookies = false) => {
+      const sessionCookies = await getYoutubeSessionCookies(forceRefreshCookies);
+
+      const sessionFetch: typeof globalThis.fetch = async (input, init) => {
+        const headers = new Headers(init?.headers);
+        if (!headers.has("User-Agent")) {
+          headers.set(
+            "User-Agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+          );
+        }
+        if (!headers.has("Accept-Language")) {
+          headers.set("Accept-Language", "en-US,en;q=0.9");
+        }
+        if (sessionCookies && !headers.has("Cookie")) {
+          headers.set("Cookie", sessionCookies);
+        }
+        return fetch(input, {
+          ...init,
+          headers,
+          ...(dispatcher ? { dispatcher } : {}),
+        });
+      };
+      return sessionFetch;
     };
-    return sessionFetch;
-  };
 
-  let transcriptItems;
-  let browserFetch = await createSessionFetch(false);
+    let browserFetch = await createSessionFetch(false);
 
-  try {
-    transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
-      lang: "en",
-      fetch: browserFetch,
-    });
+    try {
+      transcriptItems = await YoutubeTranscript.fetchTranscript(videoUrl, {
+        lang: "en",
+        fetch: browserFetch,
+      });
   } catch (firstErr: unknown) {
     // Retry with any available language
     try {
@@ -145,6 +217,7 @@ export const extractTimedTranscriptChunks = async (
         throw finalErr;
       }
     }
+  }
   }
 
   if (!transcriptItems || transcriptItems.length === 0) {
