@@ -1,9 +1,34 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { config } from "../config";
 
-export const qdrant = new QdrantClient({
-  url: config.qdrant.url,
-  apiKey: config.qdrant.apiKey,
+let qdrantInstance: QdrantClient | null = null;
+
+export function getQdrantClient(): QdrantClient {
+  if (!qdrantInstance) {
+    const url =
+      process.env.DRANT_CLUSTER_ENDPOINT ||
+      process.env.QDRANT_URL ||
+      config.qdrant.url;
+    const apiKey =
+      process.env.DRANT_API_KEY ||
+      process.env.QDRANT_API_KEY ||
+      config.qdrant.apiKey;
+
+    qdrantInstance = new QdrantClient({
+      url,
+      apiKey,
+      checkCompatibility: false,
+    });
+  }
+  return qdrantInstance;
+}
+
+export const qdrant = new Proxy({} as QdrantClient, {
+  get(_target, prop) {
+    const client = getQdrantClient();
+    const val = (client as any)[prop];
+    return typeof val === "function" ? val.bind(client) : val;
+  },
 });
 
 export const COLLECTION_NAME = config.qdrant.collectionName;

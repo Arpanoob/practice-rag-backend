@@ -75,6 +75,26 @@ async function start() {
     }
   }
 
+  // Load Qdrant API key from SSM if not in environment
+  if (!process.env.DRANT_API_KEY && !process.env.QDRANT_API_KEY) {
+    try {
+      logger.info("Checking AWS SSM Parameter Store for DRANT_API_KEY...");
+      const ssmQdrantKey =
+        (await fetchSecretFromSSM("DRANT_API_KEY", process.env.AWS_REGION || "ap-southeast-2")) ||
+        (await fetchSecretFromSSM("QDRANT_API_KEY", process.env.AWS_REGION || "ap-southeast-2"));
+      if (ssmQdrantKey) {
+        process.env.DRANT_API_KEY = ssmQdrantKey;
+        logger.info("Successfully loaded DRANT_API_KEY from AWS SSM Parameter Store.");
+      } else {
+        logger.warn("DRANT_API_KEY was not found in AWS SSM Parameter Store.");
+      }
+    } catch (err) {
+      logger.warn("Could not retrieve DRANT_API_KEY from AWS SSM", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   server = app.listen(config.port, () => {
     logger.info(`Server is running on http://localhost:${config.port}`, {
       env: config.nodeEnv,

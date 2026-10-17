@@ -40,8 +40,14 @@ export const config = {
 
   // Vector database
   qdrant: {
-    url: str("QDRANT_URL", "http://127.0.0.1:6333"),
-    apiKey: optionalStr("QDRANT_API_KEY"),
+    url: str(
+      "DRANT_CLUSTER_ENDPOINT",
+      str(
+        "QDRANT_URL",
+        "https://d44ec02c-d3ce-416a-9dd6-6c92043741ca.us-east-1-1.aws.cloud.qdrant.io"
+      )
+    ),
+    apiKey: optionalStr("DRANT_API_KEY") || optionalStr("QDRANT_API_KEY"),
     collectionName: str("QDRANT_COLLECTION", "youtube_transcripts_openai"),
     vectorSize: int("EMBED_DIM", 1536),
   },
